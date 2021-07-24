@@ -6,13 +6,14 @@ import org.bukkit.Material
 import org.bukkit.entity.Player
 import org.bukkit.inventory.ItemStack
 import org.bukkit.inventory.meta.MapMeta
+import org.bukkit.map.MapPalette
 import org.bukkit.map.MapView
 import org.bukkit.plugin.java.JavaPlugin
 import java.awt.image.BufferedImage
 import java.lang.NumberFormatException
+import java.util.Timer
+import java.util.TimerTask
 import kotlin.math.floor
-import kotlin.math.max
-import kotlin.math.min
 
 class MapsPlugin: JavaPlugin() {
     companion object {
@@ -30,7 +31,9 @@ class MapsPlugin: JavaPlugin() {
             Thread {
                 sender.sendMessage("${ChatColor.GREEN}Loading frames...")
                 frames.clear()
-                frames.addAll(ImageUtil.readFrames())
+                val list = ImageUtil.readFrames()
+                sender.sendMessage("${ChatColor.GREEN}Processing ${list.size} frames")
+                frames.addAll(list.map { MapPalette.resizeImage(it) })
                 sender.sendMessage("${ChatColor.GREEN}Loaded ${frames.size} frames")
             }.start()
             return@setExecutor true
@@ -66,29 +69,31 @@ class MapsPlugin: JavaPlugin() {
                 stack.itemMeta = it
             }
             sender.inventory.addItem(stack)
+            var currentFrame = 0
+            var actualFps = 0
+            val timer = Timer()
             Thread {
                 Thread.sleep(5000)
-                var currentFrame = 0
-                val obj = Object()
-                while (currentFrame < frames.size) {
-                    val start = System.nanoTime()
-                    val frame = frames[currentFrame++]
-                    MapsRenderer.currentFrame = frame
-                    val end = System.nanoTime()
-                    val ims = floor((1000.toDouble() / fps)).toLong()
-                    val the666666 = (((1000.toDouble() / fps) - ims) * 1000000).toInt()
-                    var dms = ims - (end - start) / 1000000
-                    var dns = the666666 - (end - start).toInt() % 1000000
-                    if (dns < 0) {
-                        dns += 1000000
-                        dms--
+                timer.scheduleAtFixedRate(object: TimerTask() {
+                    override fun run() {
+                        val color = if (actualFps != fps) ChatColor.GOLD else ChatColor.GREEN
+                        sender.sendMessage("${color}Processed $actualFps frames in last second")
+                        currentFrame += fps - actualFps
+                        actualFps = 0
                     }
-                    if (dms >= 0 || dns >= 0) {
-                        synchronized(obj) {
-                            obj.wait(max(0, min(ims, dms)), dns)
-                        }
+                }, 1000, 1000)
+                val obj = Object()
+                val ims = floor((1000.toDouble() / (fps + 1))).toLong()
+                val the666666 = (((1000.toDouble() / (fps + 1)) - ims) * 1000000).toInt()
+                while (currentFrame < frames.size) {
+                    sender.sendMessage("$currentFrame")
+                    MapsRenderer.currentFrame = frames[currentFrame++]
+                    actualFps++
+                    synchronized(obj) {
+                        obj.wait(ims, the666666)
                     }
                 }
+                timer.cancel()
             }.start()
             return@setExecutor true
         }
